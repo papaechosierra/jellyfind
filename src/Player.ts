@@ -9,7 +9,9 @@ import {
   PhysicsShapeType,
   Ray,
   ArcRotateCamera,
+  SceneLoader,
 } from '@babylonjs/core';
+import '@babylonjs/loaders/glTF';
 import { InputManager } from './InputManager';
 import { HidingSpot } from './HidingSpot';
 
@@ -29,15 +31,11 @@ export class Player {
   isHiding = false;
   private hidingSpots: HidingSpot[];
   private eWasDown = false;
+  private characterMesh: Mesh | null = null;
 
   constructor(scene: Scene, spawnPos: Vector3, input: InputManager, hidingSpots: HidingSpot[]) {
     this.input = input;
     this.hidingSpots = hidingSpots;
-
-    // Player capsule
-    const mat = new StandardMaterial('playerMat', scene);
-    mat.diffuseColor = new Color3(0.4, 0.7, 1.0);
-    mat.specularColor = new Color3(0.5, 0.5, 0.5);
 
     this.mesh = MeshBuilder.CreateCapsule('player', {
       radius: 0.45,
@@ -46,7 +44,10 @@ export class Player {
       subdivisions: 2,
     }, scene);
     this.mesh.position = spawnPos.clone();
-    this.mesh.material = mat;
+    // Make the physics capsule invisible — character mesh will be loaded separately
+    this.mesh.visibility = 0;
+
+    this.loadCharacterMesh(scene);
 
     // Physics
     this.physicsBody = new PhysicsAggregate(
@@ -70,6 +71,44 @@ export class Player {
     scene.activeCamera = this.camera;
   }
 
+  private loadCharacterMesh(scene: Scene): void {
+    SceneLoader.ImportMeshAsync('', 'https://assets.babylonjs.com/meshes/', 'HVGirl.glb', scene)
+      .then((result) => {
+        const root = result.meshes[0];
+        root.parent = this.mesh;
+        root.position = new Vector3(0, -0.9, 0);
+        root.scaling = new Vector3(1, 1, 1);
+        this.characterMesh = root as Mesh;
+      })
+      .catch(() => {
+        // Fallback: simple procedural humanoid
+        const mat = new StandardMaterial('playerFallbackMat', scene);
+        mat.diffuseColor = new Color3(0.4, 0.7, 1.0);
+
+        const torso = MeshBuilder.CreateBox('playerTorso', { width: 0.6, height: 0.7, depth: 0.3 }, scene);
+        torso.material = mat;
+        torso.parent = this.mesh;
+        torso.position = new Vector3(0, 0.1, 0);
+
+        const head = MeshBuilder.CreateSphere('playerHead', { diameter: 0.45 }, scene);
+        head.material = mat;
+        head.parent = this.mesh;
+        head.position = new Vector3(0, 0.65, 0);
+
+        const legL = MeshBuilder.CreateCylinder('playerLegL', { diameter: 0.22, height: 0.6 }, scene);
+        legL.material = mat;
+        legL.parent = this.mesh;
+        legL.position = new Vector3(-0.17, -0.5, 0);
+
+        const legR = MeshBuilder.CreateCylinder('playerLegR', { diameter: 0.22, height: 0.6 }, scene);
+        legR.material = mat;
+        legR.parent = this.mesh;
+        legR.position = new Vector3(0.17, -0.5, 0);
+
+        this.characterMesh = torso as Mesh;
+      });
+  }
+
   update(dt: number, scene: Scene): void {
     // Update camera target to follow player
     this.camera.target = this.mesh.position.add(new Vector3(0, 0.9, 0));
@@ -80,11 +119,12 @@ export class Player {
     this.camera.alpha += dx * 0.003;
     this.camera.beta = Math.max(0.2, Math.min(Math.PI / 2.2, this.camera.beta + dy * 0.003));
 
-    // Movement direction relative to camera
+    // Movement direction relative to camera (ArcRotateCamera: camera is at target + offset,
+    // so forward = target - camera position = (-cos(alpha), 0, -sin(alpha)) horizontally)
     const forward = new Vector3(
-      Math.sin(this.camera.alpha),
+      -Math.cos(this.camera.alpha),
       0,
-      Math.cos(this.camera.alpha),
+      -Math.sin(this.camera.alpha),
     ).normalize();
     const right = Vector3.Cross(Vector3.Up(), forward).normalize();
 
@@ -130,8 +170,7 @@ export class Player {
       const inSpot = this.hidingSpots.some(s => s.containsPlayer(this.mesh));
       if (inSpot) {
         this.isHiding = !this.isHiding;
-        const mat = this.mesh.material as StandardMaterial;
-        mat.alpha = this.isHiding ? 0.3 : 1.0;
+        this.setCharacterOpacity(this.isHiding ? 0.3 : 1.0);
       }
     }
     this.eWasDown = eDown;
@@ -141,9 +180,17 @@ export class Player {
       const inSpot = this.hidingSpots.some(s => s.containsPlayer(this.mesh));
       if (!inSpot) {
         this.isHiding = false;
-        const mat = this.mesh.material as StandardMaterial;
-        mat.alpha = 1.0;
+        this.setCharacterOpacity(1.0);
       }
+    }
+  }
+
+  setCharacterOpacity(alpha: number): void {
+    if (this.characterMesh) {
+      this.characterMesh.getChildMeshes(false).forEach(m => {
+        m.visibility = alpha;
+      });
+      this.characterMesh.visibility = alpha;
     }
   }
 
@@ -159,8 +206,7 @@ export class Player {
     this.physicsBody.body.setLinearVelocity(Vector3.Zero());
     this.physicsBody.body.setAngularVelocity(Vector3.Zero());
     this.isHiding = false;
-    const mat = this.mesh.material as StandardMaterial;
-    mat.alpha = 1.0;
+    this.setCharacterOpacity(1.0);
   }
 
   dropBeans(): void {

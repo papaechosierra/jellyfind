@@ -34,6 +34,7 @@ export class Cat {
   private waypoints: Vector3[];
   private waypointIdx = 0;
   private guardPos: Vector3;
+  private readonly spawnPosition: Vector3;
   private lastKnownPlayerPos: Vector3 | null = null;
   private searchTimer = 0;
   private alertPos: Vector3 | null = null;
@@ -51,6 +52,7 @@ export class Cat {
   ) {
     this.waypoints = waypoints;
     this.guardPos = position.clone();
+    this.spawnPosition = position.clone();
     this.state = initialState;
 
     // Orange cat body
@@ -283,6 +285,8 @@ export class Cat {
   }
 
   resetToPatrol(): void {
+    this.mesh.position = this.spawnPosition.clone();
+    this.waypointIdx = 0;
     this.state = this.waypoints.length > 0 ? CatState.PATROL : CatState.GUARD;
     this.lastKnownPlayerPos = null;
     this.alertPos = null;

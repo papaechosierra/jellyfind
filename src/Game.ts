@@ -36,6 +36,7 @@ export class Game {
   private ui: UIManager;
   private state = GameState.START;
   private caughtTimer = 0;
+  private respawnGraceTimer = 0;
   private spawnPos = new Vector3(0, 1, 0);
   private bagPos = new Vector3(0, 0.8, 0);
   private totalBeans = 0;
@@ -183,10 +184,22 @@ export class Game {
       this.player.carriedBeans,
     );
 
-    // Cat AI
+    // Respawn grace period: suppress cat detection and flash the player
+    const inGrace = this.respawnGraceTimer > 0;
+    if (inGrace) {
+      this.respawnGraceTimer -= clampedDt;
+      // Flash player character by toggling visibility every ~0.15s
+      const flash = Math.floor(this.respawnGraceTimer / 0.15) % 2 === 0;
+      this.player.setCharacterOpacity(flash ? 1.0 : 0.0);
+      if (this.respawnGraceTimer <= 0) {
+        this.player.setCharacterOpacity(1.0);
+      }
+    }
+
+    // Cat AI (suppress LOS detection during grace period)
     let anyAlert = false;
     for (const cat of this.cats) {
-      cat.update(clampedDt, this.player.mesh, this.player.isHiding, this.cats, this.scene);
+      cat.update(clampedDt, this.player.mesh, this.player.isHiding || inGrace, this.cats, this.scene);
       if (cat.state === CatState.ALERT || cat.state === CatState.CHASE) anyAlert = true;
     }
     if (anyAlert) this.ui.showAlert();
@@ -226,5 +239,6 @@ export class Game {
     for (const cat of this.cats) {
       cat.resetToPatrol();
     }
+    this.respawnGraceTimer = 1.5;
   }
 }
