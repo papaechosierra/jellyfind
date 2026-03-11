@@ -76,8 +76,8 @@ export class Player {
       .then((result) => {
         const root = result.meshes[0];
         root.parent = this.mesh;
+        root.scaling = new Vector3(0.008, 0.008, 0.008);
         root.position = new Vector3(0, -0.9, 0);
-        root.scaling = new Vector3(1, 1, 1);
         this.characterMesh = root as Mesh;
       })
       .catch(() => {
@@ -147,12 +147,13 @@ export class Player {
     // Get current velocity
     const vel = this.physicsBody.body.getLinearVelocity();
 
-    // Apply horizontal velocity
+    // Apply horizontal velocity and lock rotation (prevent toppling)
     this.physicsBody.body.setLinearVelocity(new Vector3(
       moveDir.x,
       vel.y,
       moveDir.z,
     ));
+    this.physicsBody.body.setAngularVelocity(Vector3.Zero());
 
     // Jump
     const grounded = this.isGrounded(scene);

@@ -7,6 +7,7 @@ import {
   Color3,
   Ray,
   AbstractMesh,
+  SceneLoader,
 } from '@babylonjs/core';
 
 export const enum CatState {
@@ -35,6 +36,7 @@ export class Cat {
   private waypointIdx = 0;
   private guardPos: Vector3;
   private readonly spawnPosition: Vector3;
+  private characterMesh: AbstractMesh | null = null;
   private lastKnownPlayerPos: Vector3 | null = null;
   private searchTimer = 0;
   private alertPos: Vector3 | null = null;
@@ -55,11 +57,7 @@ export class Cat {
     this.spawnPosition = position.clone();
     this.state = initialState;
 
-    // Orange cat body
-    const mat = new StandardMaterial('catMat_' + Math.random(), scene);
-    mat.diffuseColor = new Color3(1, 0.5, 0.1);
-    mat.specularColor = new Color3(0.3, 0.3, 0.3);
-
+    // Physics capsule (invisible — character mesh loaded below)
     this.mesh = MeshBuilder.CreateCapsule('cat_' + Math.random(), {
       radius: 0.6,
       height: 2.4,
@@ -67,29 +65,58 @@ export class Cat {
       subdivisions: 2,
     }, scene);
     this.mesh.position = position.clone();
+    this.mesh.visibility = 0;
+
+    // Procedural fallback parts (hidden once real mesh loads)
+    const mat = new StandardMaterial('catMat_' + Math.random(), scene);
+    mat.diffuseColor = new Color3(1, 0.5, 0.1);
     this.mesh.material = mat;
 
-    // Ears (triangular-ish cylinders)
-    const earMat = new StandardMaterial('earMat', scene);
+    const earMat = new StandardMaterial('earMat_' + Math.random(), scene);
     earMat.diffuseColor = new Color3(1, 0.35, 0.1);
-    this.earL = MeshBuilder.CreateCylinder('earL', { diameterTop: 0, diameterBottom: 0.4, height: 0.6, tessellation: 6 }, scene);
+    this.earL = MeshBuilder.CreateCylinder('earL_' + Math.random(), { diameterTop: 0, diameterBottom: 0.4, height: 0.6, tessellation: 6 }, scene);
     this.earL.material = earMat;
     this.earL.parent = this.mesh;
     this.earL.position = new Vector3(-0.35, 1.3, 0);
 
-    this.earR = MeshBuilder.CreateCylinder('earR', { diameterTop: 0, diameterBottom: 0.4, height: 0.6, tessellation: 6 }, scene);
+    this.earR = MeshBuilder.CreateCylinder('earR_' + Math.random(), { diameterTop: 0, diameterBottom: 0.4, height: 0.6, tessellation: 6 }, scene);
     this.earR.material = earMat;
     this.earR.parent = this.mesh;
     this.earR.position = new Vector3(0.35, 1.3, 0);
 
-    // Tail
-    const tailMat = new StandardMaterial('tailMat', scene);
+    const tailMat = new StandardMaterial('tailMat_' + Math.random(), scene);
     tailMat.diffuseColor = new Color3(0.9, 0.45, 0.1);
-    this.tailMesh = MeshBuilder.CreateCylinder('tail', { diameterTop: 0.1, diameterBottom: 0.3, height: 1.8, tessellation: 8 }, scene);
+    this.tailMesh = MeshBuilder.CreateCylinder('tail_' + Math.random(), { diameterTop: 0.1, diameterBottom: 0.3, height: 1.8, tessellation: 8 }, scene);
     this.tailMesh.material = tailMat;
     this.tailMesh.parent = this.mesh;
     this.tailMesh.position = new Vector3(0, -0.5, -0.8);
     this.tailMesh.rotation.x = -Math.PI / 3;
+
+    this.loadCatMesh(scene);
+  }
+
+  private loadCatMesh(scene: Scene): void {
+    SceneLoader.ImportMeshAsync('', 'https://assets.babylonjs.com/meshes/', 'SSAOcat.babylon', scene)
+      .then((result) => {
+        const root = result.meshes[0];
+        // Auto-scale so the cat fits the capsule height (2.4 units)
+        root.computeWorldMatrix(true);
+        const bounds = root.getHierarchyBoundingVectors(true);
+        const nativeHeight = bounds.max.y - bounds.min.y;
+        const scale = nativeHeight > 0.001 ? 2.4 / nativeHeight : 1;
+        root.scaling = new Vector3(scale, scale, scale);
+        root.position = new Vector3(0, -1.2, 0); // align feet with capsule bottom
+        root.parent = this.mesh;
+        this.characterMesh = root;
+        // Hide procedural parts
+        this.earL.setEnabled(false);
+        this.earR.setEnabled(false);
+        this.tailMesh.setEnabled(false);
+      })
+      .catch(() => {
+        // Show procedural capsule as fallback
+        this.mesh.visibility = 1;
+      });
   }
 
   update(
