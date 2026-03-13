@@ -76,7 +76,7 @@ export class Player {
       .then((result) => {
         const root = result.meshes[0];
         root.parent = this.mesh;
-        root.scaling = new Vector3(0.008, 0.008, 0.008);
+        root.scaling = new Vector3(0.08, 0.08, 0.08);
         root.position = new Vector3(0, -0.9, 0);
         this.characterMesh = root as Mesh;
       })
