@@ -99,11 +99,17 @@ export class Cat {
     SceneLoader.ImportMeshAsync('', 'https://assets.babylonjs.com/meshes/', 'SSAOcat.babylon', scene)
       .then((result) => {
         const root = result.meshes[0];
-        // Auto-scale so the cat fits the capsule height (2.4 units)
+        // Force world matrix computation on all child meshes before measuring bounds
+        root.getChildMeshes().forEach(m => m.computeWorldMatrix(true));
         root.computeWorldMatrix(true);
         const bounds = root.getHierarchyBoundingVectors(true);
         const nativeHeight = bounds.max.y - bounds.min.y;
-        const scale = nativeHeight > 0.001 ? 2.4 / nativeHeight : 1;
+        let scale = nativeHeight > 0.001 ? 2.4 / nativeHeight : 1;
+        // Sanity check: if scale is unreasonable, use fallback
+        if (scale < 0.01 || scale > 50) {
+          console.warn(`Cat mesh scale out of range (${scale}), using fallback scale 1`);
+          scale = 1;
+        }
         root.scaling = new Vector3(scale, scale, scale);
         root.position = new Vector3(0, -1.2, 0); // align feet with capsule bottom
         root.parent = this.mesh;

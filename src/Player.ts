@@ -10,6 +10,7 @@ import {
   Ray,
   ArcRotateCamera,
   SceneLoader,
+  Quaternion,
 } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 import { InputManager } from './InputManager';
@@ -32,6 +33,7 @@ export class Player {
   private hidingSpots: HidingSpot[];
   private eWasDown = false;
   private characterMesh: Mesh | null = null;
+  private playerYaw = 0;
 
   constructor(scene: Scene, spawnPos: Vector3, input: InputManager, hidingSpots: HidingSpot[]) {
     this.input = input;
@@ -59,6 +61,8 @@ export class Player {
     // Lock rotation via angular damping (Havok)
     this.physicsBody.body.setAngularDamping(100);
     this.physicsBody.body.setLinearDamping(0.1);
+    // Allow mesh transform to sync back to physics body (needed to force upright orientation)
+    this.physicsBody.body.disablePreStep = false;
 
     // Camera
     this.camera = new ArcRotateCamera('cam', -Math.PI / 2, Math.PI / 3.5, 8, Vector3.Zero(), scene);
@@ -113,19 +117,15 @@ export class Player {
     // Update camera target to follow player
     this.camera.target = this.mesh.position.add(new Vector3(0, 0.9, 0));
 
-    // Mouse look
+    // Mouse look — deltaX controls playerYaw (FPS-style), deltaY controls camera pitch
     const dx = this.input.mouseDeltaX;
     const dy = this.input.mouseDeltaY;
-    this.camera.alpha += dx * 0.003;
+    this.playerYaw -= dx * 0.003;
+    this.camera.alpha = this.playerYaw + Math.PI; // camera faces same direction as player
     this.camera.beta = Math.max(0.2, Math.min(Math.PI / 2.2, this.camera.beta + dy * 0.003));
 
-    // Movement direction relative to camera (ArcRotateCamera: camera is at target + offset,
-    // so forward = target - camera position = (-cos(alpha), 0, -sin(alpha)) horizontally)
-    const forward = new Vector3(
-      -Math.cos(this.camera.alpha),
-      0,
-      -Math.sin(this.camera.alpha),
-    ).normalize();
+    // Movement direction relative to player facing (playerYaw)
+    const forward = new Vector3(Math.sin(this.playerYaw), 0, Math.cos(this.playerYaw)).normalize();
     const right = Vector3.Cross(Vector3.Up(), forward).normalize();
 
     let moveX = 0;
@@ -140,8 +140,11 @@ export class Player {
     const moveDir = forward.scale(moveZ).add(right.scale(moveX));
     if (moveDir.lengthSquared() > 0) {
       moveDir.normalize().scaleInPlace(speed);
-      // Face movement direction
-      this.mesh.rotation.y = Math.atan2(moveDir.x, moveDir.z);
+    }
+
+    // Rotate character mesh to face player yaw
+    if (this.characterMesh) {
+      this.characterMesh.rotation.y = this.playerYaw;
     }
 
     // Get current velocity
@@ -154,6 +157,9 @@ export class Player {
       moveDir.z,
     ));
     this.physicsBody.body.setAngularVelocity(Vector3.Zero());
+
+    // Force capsule upright every frame (prevents toppling)
+    this.mesh.rotationQuaternion = Quaternion.Identity();
 
     // Jump
     const grounded = this.isGrounded(scene);
